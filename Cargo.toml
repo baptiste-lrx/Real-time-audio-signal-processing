@@ -1,0 +1,8 @@
+[package]
+name = "real_time_audio_signal_processing"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+cpal = "0.15"   # Pour capturer le flux audio en temps réel
+midir = "0.8"   # Pour la gestion des événements MIDI
