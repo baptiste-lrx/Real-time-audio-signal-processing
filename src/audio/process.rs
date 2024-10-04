@@ -1,59 +1,78 @@
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use std::time::Duration;
+use cpal::traits::{DeviceTrait, HostTrait};
+use std::sync::{Arc, Mutex};
+use std::error::Error;
 
-pub fn capture_audio() {
-    // Initialisation du système hôte
+pub fn capture_audio() -> Result<(), Box<dyn Error>> {
+    // Initialise l'hôte audio par défaut
     let host = cpal::default_host();
 
-    // Choisir un périphérique d'entrée audio (microphone)
-    let device = host.default_input_device().expect("Aucun périphérique d'entrée trouvé");
+    // Sélectionne le périphérique "monitor" de PulseAudio
+    let device = host
+        .devices()?
+        .filter(|d| d.name().unwrap_or_default().contains("Monitor"))  // On filtre le périphérique qui contient "Monitor"
+        .next()
+        .expect("Aucun périphérique monitor trouvé.");
 
-    println!("Utilisation du périphérique : {}", device.name().unwrap());
+    // Récupération de la configuration par défaut du périphérique
+    let config = device.default_input_config()?;
 
-    // Configuration du format de capture
-    let config = device.default_input_config().unwrap();
+    // Crée une structure partagée pour stocker les données audio capturées
+    let audio_data: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::new()));
 
-    println!("Format de capture audio : {:?}", config);
-
-    // Créer et démarrer le flux audio
+    // Crée le flux d'entrée
     let stream = match config.sample_format() {
-        cpal::SampleFormat::F32 => build_input_stream::<f32>(&device, &config.into()),
-        cpal::SampleFormat::I16 => build_input_stream::<i16>(&device, &config.into()),
-        cpal::SampleFormat::U16 => build_input_stream::<u16>(&device, &config.into()),
-        _ => panic!("Format d'échantillon non pris en charge !"),
-    }.expect("Erreur lors de la création du flux audio");
+        cpal::SampleFormat::F32 => build_input_stream::<f32>(&device, &config.into(), audio_data.clone())?,
+        cpal::SampleFormat::I16 => {
+            // Change audio_data pour correspondre au type i16
+            let audio_data_i16: Arc<Mutex<Vec<i16>>> = Arc::new(Mutex::new(Vec::new()));
+            build_input_stream::<i16>(&device, &config.into(), audio_data_i16.clone())?
+        },
+        cpal::SampleFormat::U16 => {
+            // Change audio_data pour correspondre au type u16
+            let audio_data_u16: Arc<Mutex<Vec<u16>>> = Arc::new(Mutex::new(Vec::new()));
+            build_input_stream::<u16>(&device, &config.into(), audio_data_u16.clone())?
+        },
+        _ => panic!("Format d'échantillons non supporté"),
+    };
 
-    // Lancer le flux
-    stream.play().unwrap();
-    println!("Capture en cours... Appuyez sur Ctrl+C pour arrêter.");
+    // Lecture du stream pour démarrer la capture audio
+    println!("Capture audio en cours...");
 
-    // Pour maintenir le programme en cours, car le flux fonctionne en arrière-plan.
-    std::thread::park();
+    // Démarre le flux
+    stream.play()?;
+
+    // Attendre indéfiniment ou exécuter d'autres tâches
+    std::thread::sleep(std::time::Duration::from_secs(10));
+
+    Ok(())
 }
 
-// Fonction utilitaire pour créer un flux audio d'entrée en fonction du format des échantillons
-fn build_input_stream<T>(device: &cpal::Device, config: &cpal::StreamConfig) -> Result<cpal::Stream, cpal::BuildStreamError>
+// Fonction générique pour gérer la capture de différents formats d'échantillons
+fn build_input_stream<T>(
+    device: &cpal::Device,
+    config: &cpal::StreamConfig,
+    audio_data: Arc<Mutex<Vec<T>>>,
+) -> Result<cpal::Stream, Box<dyn Error>>
 where
-    T: cpal::Sample + std::fmt::Debug + cpal::SizedSample, // Ajout de `cpal::SizedSample`
+    T: cpal::Sample + std::fmt::Debug + Send + 'static + cpal::SizedSample,
 {
-    device.build_input_stream(
+    let stream = device.build_input_stream(
         config,
         move |data: &[T], _: &cpal::InputCallbackInfo| {
-            // Traitement des données audio capturées (ici, juste les afficher)
-            process_audio_data(data);
+            // Ici, les données capturées sont mises à jour en temps réel
+            let mut audio_buffer = audio_data.lock().unwrap();
+
+            // Ajoute les nouvelles données au buffer audio
+            audio_buffer.extend_from_slice(data);
+
+            // Affiche un lot d'échantillons capturés pour vérifier que les données sont bien mises à jour
+            println!("Nouveau lot de données audio : {:?}", &data[0..std::cmp::min(10, data.len())]);
         },
         move |err| {
-            eprintln!("Erreur lors de la capture audio : {:?}", err);
+            eprintln!("Erreur de capture audio : {:?}", err);
         },
-        Some(Duration::from_millis(10)), // Ajout d'une durée optionnelle pour la latence
-    )
-}
+        None,
+    )?;
 
-fn process_audio_data<T>(data: &[T])
-where
-    T: cpal::Sample + std::fmt::Debug + cpal::SizedSample,
-{
-    // Par exemple, ici on va juste afficher les premiers échantillons pour vérifier
-    println!("Échantillons audio capturés : {:?}", &data[0..5]);
-    // TODO: Transformer ces échantillons en fréquences pour transcription
+    Ok(stream)
 }
