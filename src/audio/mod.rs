@@ -1,7 +1,4 @@
-pub mod process;
+// src/audio/mod.rs
 
-pub fn process_audio() {
-    println!("Traitement du flux audio...");
-    // Appel des fonctions du module `process`
-    process::capture_audio();
-}
+pub mod capture;
+pub mod process;
