@@ -9,6 +9,7 @@ use pulse::sample::{Format, Spec};
 use pulse::stream::{PeekResult, State as StreamState, Stream, FlagSet as StreamFlagSet};
 use std::sync::mpsc::Sender;
 use std::thread;
+use hound;
 
 pub struct AudioCapturer {
     source_name: String,
@@ -24,7 +25,7 @@ impl AudioCapturer {
     pub fn start(&self, sender: Sender<Vec<i16>>) {
         let source_name = self.source_name.clone();
         thread::spawn(move || {
-            // Le code de capture audio précédemment dans `main.rs`
+            // Le code de capture audio
 
             // Créer le Proplist
             let mut proplist = Proplist::new().unwrap();
@@ -100,6 +101,17 @@ impl AudioCapturer {
                 }
             }
 
+            // Configuration du writer WAV
+            let wav_spec = hound::WavSpec {
+                channels: 2,
+                sample_rate: 44100,
+                bits_per_sample: 16,
+                sample_format: hound::SampleFormat::Int,
+            };
+
+            let mut wav_writer = hound::WavWriter::create("enregistrement.wav", wav_spec)
+                .expect("Impossible de créer le fichier WAV");
+
             // Boucle principale de capture
             loop {
                 match mainloop.iterate(true) {
@@ -121,6 +133,13 @@ impl AudioCapturer {
                                         break;
                                     }
 
+                                    // Écrire les échantillons dans le fichier WAV
+                                    for &sample in samples {
+                                        wav_writer
+                                            .write_sample(sample)
+                                            .expect("Erreur lors de l'écriture du fichier WAV");
+                                    }
+
                                     stream.discard().unwrap();
                                 }
                                 Ok(_) => {}
@@ -139,6 +158,11 @@ impl AudioCapturer {
                     }
                 }
             }
+
+            // Fermer le writer WAV
+            wav_writer
+                .finalize()
+                .expect("Erreur lors de la fermeture du fichier WAV");
 
             // Arrêter le Stream et le Mainloop
             stream.disconnect().unwrap();
