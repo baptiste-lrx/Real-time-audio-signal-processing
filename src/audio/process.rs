@@ -1,78 +1,66 @@
-use cpal::traits::{DeviceTrait, HostTrait};
-use std::sync::{Arc, Mutex};
-use std::error::Error;
+// src/audio/process.rs
 
-pub fn capture_audio() -> Result<(), Box<dyn Error>> {
-    // Initialise l'hôte audio par défaut
-    let host = cpal::default_host();
+use rustfft::{num_complex::Complex, FftPlanner};
+use std::sync::mpsc::Receiver;
+use crate::utils;
 
-    // Sélectionne le périphérique "monitor" de PulseAudio
-    let device = host
-        .devices()?
-        .filter(|d| d.name().unwrap_or_default().contains("Monitor"))  // On filtre le périphérique qui contient "Monitor"
-        .next()
-        .expect("Aucun périphérique monitor trouvé.");
-
-    // Récupération de la configuration par défaut du périphérique
-    let config = device.default_input_config()?;
-
-    // Crée une structure partagée pour stocker les données audio capturées
-    let audio_data: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::new()));
-
-    // Crée le flux d'entrée
-    let stream = match config.sample_format() {
-        cpal::SampleFormat::F32 => build_input_stream::<f32>(&device, &config.into(), audio_data.clone())?,
-        cpal::SampleFormat::I16 => {
-            // Change audio_data pour correspondre au type i16
-            let audio_data_i16: Arc<Mutex<Vec<i16>>> = Arc::new(Mutex::new(Vec::new()));
-            build_input_stream::<i16>(&device, &config.into(), audio_data_i16.clone())?
-        },
-        cpal::SampleFormat::U16 => {
-            // Change audio_data pour correspondre au type u16
-            let audio_data_u16: Arc<Mutex<Vec<u16>>> = Arc::new(Mutex::new(Vec::new()));
-            build_input_stream::<u16>(&device, &config.into(), audio_data_u16.clone())?
-        },
-        _ => panic!("Format d'échantillons non supporté"),
-    };
-
-    // Lecture du stream pour démarrer la capture audio
-    println!("Capture audio en cours...");
-
-    // Démarre le flux
-    stream.play()?;
-
-    // Attendre indéfiniment ou exécuter d'autres tâches
-    std::thread::sleep(std::time::Duration::from_secs(10));
-
-    Ok(())
+pub struct AudioProcessor {
+    receiver: Receiver<Vec<i16>>,
 }
 
-// Fonction générique pour gérer la capture de différents formats d'échantillons
-fn build_input_stream<T>(
-    device: &cpal::Device,
-    config: &cpal::StreamConfig,
-    audio_data: Arc<Mutex<Vec<T>>>,
-) -> Result<cpal::Stream, Box<dyn Error>>
-where
-    T: cpal::Sample + std::fmt::Debug + Send + 'static + cpal::SizedSample,
-{
-    let stream = device.build_input_stream(
-        config,
-        move |data: &[T], _: &cpal::InputCallbackInfo| {
-            // Ici, les données capturées sont mises à jour en temps réel
-            let mut audio_buffer = audio_data.lock().unwrap();
+impl AudioProcessor {
+    pub fn new(receiver: Receiver<Vec<i16>>) -> Self {
+        AudioProcessor { receiver }
+    }
 
-            // Ajoute les nouvelles données au buffer audio
-            audio_buffer.extend_from_slice(data);
+    pub fn start(&self) {
+        let mut fft_planner = FftPlanner::<f32>::new();
+        let fft_size = 1024; // Taille de la FFT
+        let fft = fft_planner.plan_fft_forward(fft_size);
 
-            // Affiche un lot d'échantillons capturés pour vérifier que les données sont bien mises à jour
-            println!("Nouveau lot de données audio : {:?}", &data[0..std::cmp::min(10, data.len())]);
-        },
-        move |err| {
-            eprintln!("Erreur de capture audio : {:?}", err);
-        },
-        None,
-    )?;
+        let mut audio_buffer: Vec<i16> = Vec::new();
 
-    Ok(stream)
+        loop {
+            match self.receiver.recv() {
+                Ok(samples) => {
+                    audio_buffer.extend(samples);
+
+                    // Traiter les données si suffisamment d'échantillons
+                    while audio_buffer.len() >= fft_size {
+                        let window_samples = audio_buffer.drain(..fft_size).collect::<Vec<_>>();
+
+                        // Convertir en nombres complexes
+                        let mut fft_input: Vec<Complex<f32>> = window_samples
+                            .iter()
+                            .map(|&s| Complex {
+                                re: s as f32,
+                                im: 0.0,
+                            })
+                            .collect();
+
+                        // Appliquer une fenêtre (Hann)
+                        utils::apply_hann_window(&mut fft_input);
+
+                        // Exécuter la FFT
+                        fft.process(&mut fft_input);
+
+                        // Calculer les magnitudes
+                        let magnitudes: Vec<f32> = fft_input.iter().map(|c| c.norm()).collect();
+
+                        // Détecter la fréquence fondamentale
+                        if let Some(freq) = utils::detect_fundamental_frequency(&magnitudes, 44100.0) {
+                            let note = utils::frequency_to_note(freq);
+                            println!("Note détectée : {}", note);
+
+                            // Ici, vous pouvez transmettre la note au module MIDI ou LEDs
+                        }
+                    }
+                }
+                Err(_) => {
+                    eprintln!("Le canal a été fermé");
+                    break;
+                }
+            }
+        }
+    }
 }
