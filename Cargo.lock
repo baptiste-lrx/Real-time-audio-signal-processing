@@ -34,6 +34,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "aubio"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "577cfca08ecb60eb4ad21f19507bc614229130112ac606cd493c0e5bb5318f54"
+dependencies = [
+ "aubio-sys",
+]
+
+[[package]]
+name = "aubio-sys"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "99ef2dfeaceccd0b8a6d72203409acc927d9eebc8180c5756099549c9f8f20a8"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -759,6 +777,7 @@ dependencies = [
 name = "real_time_audio_signal_processing"
 version = "0.1.0"
 dependencies = [
+ "aubio",
  "cpal",
  "dasp",
  "dasp_signal",
