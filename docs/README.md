@@ -49,7 +49,7 @@ Before you start, please make sure you have the following installed:
 
    Make sure your `Cargo.toml` file contains the necessary dependencies:
 
-   ```toml
+   ```
    [package]
    name = “real_time_audio_signal_processing”
    version = “0.1.0
@@ -175,8 +175,8 @@ Also check that your code editor or IDE has the necessary permissions to write t
 
 ### Pitch detection problems
 
-- No frequency detected** : Make sure the microphone is working properly and that the input volume is sufficient.
-- Incorrect frequencies detected**: Check audio filtering and sample normalization. Use a test signal (such as a frequency generator) to validate the algorithm.
+- **No frequency detected** : Make sure the microphone is working properly and that the input volume is sufficient.
+- **Incorrect frequencies detected**: Check audio filtering and sample normalization. Use a test signal (such as a frequency generator) to validate the algorithm.
 
 ## Contribute
 
