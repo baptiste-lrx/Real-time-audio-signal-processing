@@ -13,15 +13,15 @@ use std::error::Error;
 use std::sync::mpsc::channel;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    // Nom de la source PulseAudio ou ALSA (à ajuster selon votre configuration)
-    let source_name = "hw:0,0"; // Remplacez par votre source de capture correcte
+    // Nom de la source PulseAudio
+    let source_name = "bluez_source.DC_E5_5B_25_03_64.a2dp_source";
 
     // Créer un canal pour transmettre les échantillons audio
     let (sender, receiver) = channel();
 
     // Initialiser le module de capture audio
     let audio_capturer = AudioCapturer::new(source_name);
-    audio_capturer.start(sender)?; // Assurez-vous que `start` retourne un Result
+    audio_capturer.start(sender); // Assurez-vous que `start` retourne un Result
 
     // Initialiser le transcripteur MIDI avec le canal 0 (canal 1 MIDI)
     let mut midi_transcriber = MidiTranscriber::new(0)?; // Canal 0
